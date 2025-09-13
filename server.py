@@ -4,16 +4,42 @@ import requests
 
 app = Flask(__name__)
 
-# === РОУТ ДЛЯ АКЦИЙ ===
+# === КРИПТО ===
+@app.route("/crypto")
+def crypto_price():
+    symbol = request.args.get("symbol", "").lower()
+    if not symbol:
+        return jsonify({"error": "No symbol provided"}), 400
+
+    try:
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+
+        if symbol in data and "usd" in data[symbol]:
+            return jsonify({"price": data[symbol]["usd"]})
+        else:
+            return jsonify({"error": f"No price for {symbol}"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# === АКЦИИ ===
 @app.route("/stock")
 def stock_price():
     symbol = request.args.get("symbol", "").upper()
-    try:
-        if not symbol:
-            return jsonify({"error": "No symbol provided"}), 400
+    if not symbol:
+        return jsonify({"error": "No symbol provided"}), 400
 
+    try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period="1d")
+
+        # если пусто — пробуем с .US
+        if hist.empty:
+            ticker = yf.Ticker(symbol + ".US")
+            hist = ticker.history(period="1d")
 
         if hist.empty:
             return jsonify({"error": f"No data for {symbol}"}), 404
@@ -24,31 +50,10 @@ def stock_price():
         return jsonify({"error": str(e)}), 500
 
 
-# === РОУТ ДЛЯ КРИПТЫ ===
-@app.route("/crypto")
-def crypto_price():
-    symbol = request.args.get("symbol", "").lower()
-    try:
-        if not symbol:
-            return jsonify({"error": "No symbol provided"}), 400
-
-        url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
-        res = requests.get(url, timeout=10)
-        data = res.json()
-
-        if symbol in data and "usd" in data[symbol]:
-            return jsonify({"price": data[symbol]["usd"]})
-        else:
-            return jsonify({"error": f"No price for {symbol}"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# === ТЕСТОВАЯ ГЛАВНАЯ СТРАНИЦА ===
 @app.route("/")
 def home():
-    return "Portfolio API is running 🚀"
+    return "Portfolio API is running!"
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=5000)
