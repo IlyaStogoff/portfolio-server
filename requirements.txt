@@ -1,3 +1,4 @@
-flask
-requests
-gunicorn
+Flask==3.0.3
+gunicorn==23.0.0
+yfinance==0.2.50
+requests==2.32.3
