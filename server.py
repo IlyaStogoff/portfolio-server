@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify
-import yfinance as yf
 from pycoingecko import CoinGeckoAPI
+import requests
 import time
 
 app = Flask(__name__)
 cg = CoinGeckoAPI()
 
-# простое кеширование
+# Кэш, чтобы не перегружать API
 cache = {}
 CACHE_TTL = 60  # 1 минута
 
@@ -21,7 +21,7 @@ def set_cache(key, value):
     cache[key] = (value, time.time())
 
 
-# ------------------ КРИПТА ------------------
+# ---------- КРИПТА ----------
 @app.route("/crypto")
 def crypto_price():
     symbol = request.args.get("symbol", "").lower()
@@ -45,7 +45,7 @@ def crypto_price():
         return jsonify({"error": str(e)}), 500
 
 
-# ------------------ АКЦИИ ------------------
+# ---------- АКЦИИ ----------
 @app.route("/stock")
 def stock_price():
     symbol = request.args.get("symbol", "").upper()
@@ -57,26 +57,21 @@ def stock_price():
         return jsonify(cached)
 
     try:
-        ticker = yf.Ticker(symbol)
+        url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbol}"
+        res = requests.get(url, timeout=5)
+        data = res.json()
 
-        price = None
-        hist = ticker.history(period="1d")
-        if not hist.empty:
-            price = hist["Close"].iloc[-1]
-
-        if not price:
-            try:
-                price = ticker.fast_info.last_price
-            except Exception:
-                pass
-
-        if not price:
+        result_data = data.get("quoteResponse", {}).get("result", [])
+        if not result_data:
             return jsonify({"error": f"No data for {symbol}"}), 404
+
+        price = result_data[0].get("regularMarketPrice")
+        if not price:
+            return jsonify({"error": f"No price for {symbol}"}), 404
 
         result = {"price": float(price)}
         set_cache(f"stock:{symbol}", result)
         return jsonify(result)
-
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
