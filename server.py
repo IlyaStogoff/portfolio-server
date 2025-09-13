@@ -4,8 +4,8 @@ import requests, time
 
 app = Flask(__name__)
 
-cache = {}  # простое кэширование {ключ: (время, данные)}
-CACHE_TTL = 60  # 60 секунд
+cache = {}
+CACHE_TTL = 60
 
 
 def get_cached(key):
@@ -32,15 +32,29 @@ def crypto_price():
         return jsonify(cached)
 
     try:
-        # 1) Попробуем через Yahoo (пример: BTC-USD)
+        # Попробуем Yahoo (BTC-USD, ETH-USD и т.д.)
         ticker = yf.Ticker(symbol.upper() + "-USD")
-        price = ticker.fast_info.last_price
+        price = None
+
+        try:
+            price = ticker.fast_info.last_price
+        except Exception:
+            pass
+
+        if not price:
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                price = hist["Close"].iloc[-1]
+
+        if not price:
+            price = ticker.info.get("regularMarketPrice")
+
         if price:
             result = {"price": float(price)}
             set_cache(f"crypto:{symbol}", result)
             return jsonify(result)
 
-        # 2) Если не нашли — идём в CoinGecko
+        # Если не нашли в Yahoo → идём в CoinGecko
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
@@ -68,7 +82,21 @@ def stock_price():
 
     try:
         ticker = yf.Ticker(symbol)
-        price = ticker.fast_info.last_price
+        price = None
+
+        try:
+            price = ticker.fast_info.last_price
+        except Exception:
+            pass
+
+        if not price:
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                price = hist["Close"].iloc[-1]
+
+        if not price:
+            price = ticker.info.get("regularMarketPrice")
+
         if not price:
             return jsonify({"error": f"No data for {symbol}"}), 404
 
