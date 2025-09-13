@@ -1,8 +1,24 @@
 from flask import Flask, request, jsonify
 import yfinance as yf
-import requests
+import requests, time
 
 app = Flask(__name__)
+
+cache = {}  # простое кэширование {ключ: (время, данные)}
+CACHE_TTL = 60  # 60 секунд
+
+
+def get_cached(key):
+    if key in cache:
+        ts, data = cache[key]
+        if time.time() - ts < CACHE_TTL:
+            return data
+    return None
+
+
+def set_cache(key, data):
+    cache[key] = (time.time(), data)
+
 
 # === КРИПТО ===
 @app.route("/crypto")
@@ -11,14 +27,28 @@ def crypto_price():
     if not symbol:
         return jsonify({"error": "No symbol provided"}), 400
 
+    cached = get_cached(f"crypto:{symbol}")
+    if cached:
+        return jsonify(cached)
+
     try:
+        # 1) Попробуем через Yahoo (пример: BTC-USD)
+        ticker = yf.Ticker(symbol.upper() + "-USD")
+        price = ticker.fast_info.last_price
+        if price:
+            result = {"price": float(price)}
+            set_cache(f"crypto:{symbol}", result)
+            return jsonify(result)
+
+        # 2) Если не нашли — идём в CoinGecko
         url = f"https://api.coingecko.com/api/v3/simple/price?ids={symbol}&vs_currencies=usd"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
-
         if symbol in data and "usd" in data[symbol]:
-            return jsonify({"price": data[symbol]["usd"]})
+            result = {"price": data[symbol]["usd"]}
+            set_cache(f"crypto:{symbol}", result)
+            return jsonify(result)
         else:
             return jsonify({"error": f"No price for {symbol}"})
     except Exception as e:
@@ -32,20 +62,19 @@ def stock_price():
     if not symbol:
         return jsonify({"error": "No symbol provided"}), 400
 
+    cached = get_cached(f"stock:{symbol}")
+    if cached:
+        return jsonify(cached)
+
     try:
         ticker = yf.Ticker(symbol)
-        hist = ticker.history(period="1d")
-
-        # если пусто — пробуем с .US
-        if hist.empty:
-            ticker = yf.Ticker(symbol + ".US")
-            hist = ticker.history(period="1d")
-
-        if hist.empty:
+        price = ticker.fast_info.last_price
+        if not price:
             return jsonify({"error": f"No data for {symbol}"}), 404
 
-        price = hist["Close"].iloc[-1]
-        return jsonify({"price": float(price)})
+        result = {"price": float(price)}
+        set_cache(f"stock:{symbol}", result)
+        return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
